@@ -21,7 +21,11 @@ if __name__ == "__main__":
     onnx.shape_inference.infer_shapes_path(model_path, out_model_path)
     
     artifacts_dir = os.path.join(out_dir_path, "intermediate_artifacts")
-    shutil.rmtree(artifacts_dir)
+    try:
+        shutil.rmtree(artifacts_dir)
+    except FileNotFoundError:
+        pass
+
     os.makedirs(artifacts_dir, exist_ok=False)
 
     so = rt.SessionOptions()
@@ -46,7 +50,7 @@ if __name__ == "__main__":
         "advanced_options:calibration_frames": 1,
         # "advanced_options:calibration_iterations": XXX,
     }
-    
+
     desired_eps = ['TIDLCompilationProvider','CPUExecutionProvider']
     sess = rt.InferenceSession(
         out_model_path,
