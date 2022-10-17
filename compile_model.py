@@ -75,6 +75,7 @@ if __name__ == "__main__":
     
     for i in range(num_calibration_frames):
         dummy_data = np.random.standard_normal(size = (1, channel, height, width))
+        # Standard torchvision normalization parameters used by the pretrained model
         dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
         # dummy_data = np.ones((1, channel, height, width))
 

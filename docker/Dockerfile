@@ -25,7 +25,9 @@ ADD https://raw.githubusercontent.com/TexasInstruments/edgeai-tidl-tools/3dc3598
 RUN python3.6 -m pip install -r /requirements_pc.txt
 
 RUN cd / \
-    && wget https://software-dl.ti.com/jacinto7/esd/tidl-tools/08_04_00_00/tidl_tools.tar.gz \
+    && wget https://github.com/TexasInstruments/edgeai-tidl-tools/releases/download/08_02_00_01-rc1/tidl_tools.tar.gz \
+    # For TIDL 8.4:
+    # && wget https://software-dl.ti.com/jacinto7/esd/tidl-tools/08_04_00_00/tidl_tools.tar.gz \
     && tar -xzf tidl_tools.tar.gz \
     && rm tidl_tools.tar.gz
 
