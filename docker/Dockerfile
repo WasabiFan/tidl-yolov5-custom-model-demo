@@ -1,5 +1,5 @@
 
-FROM ubuntu:20.04
+FROM ubuntu:18.04
 
 # Skipped ArmNN, TFLite, ARM gcc, and CPP deps
 
@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y \
     git \
     wget \
     graphviz \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y \
+    cmake build-essential protobuf-compiler libprotobuf-dev libjpeg-dev python3.6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 ADD https://raw.githubusercontent.com/TexasInstruments/edgeai-tidl-tools/3dc359873f0b80c1e1a0b4eec5d1d02e35d4e532/requirements_pc.txt /
