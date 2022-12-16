@@ -6,7 +6,7 @@ import shutil
 import onnxruntime as rt
 import numpy as np
 
-os.environ["TIDL_RT_PERFSTATS"] = "1"
+# os.environ["TIDL_RT_PERFSTATS"] = "1"
 
 if __name__ == "__main__":
     _, model_path, artifacts_dir = sys.argv
@@ -20,6 +20,7 @@ if __name__ == "__main__":
         "version": "8.2",
 
         "artifacts_folder": artifacts_dir,
+        #"enableLayerPerfTraces": True,
     }
 
     desired_eps = ['TIDLExecutionProvider', 'CPUExecutionProvider']
@@ -49,15 +50,19 @@ if __name__ == "__main__":
         dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
 
         dummy_data = dummy_data.astype(np.single)
+        # dummy_data = dummy_data.astype(np.uint8)
 
         # TODO: de-mean and normalize a proper image
         input_data = dummy_data
         output = sess.run(None, {input_name: input_data})
     
-    dummy_data = np.random.standard_normal(size = (1, channel, height, width))
+    dummy_data = np.random.random_sample(size = (1, channel, height, width))
+    # dummy_data = np.random.standard_normal(size = (1, channel, height, width))
+    # dummy_data = np.random.randint(256, size = (1, channel, height, width), dtype=np.uint8)
     # Standard torchvision normalization parameters used by the pretrained model
-    dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
+    # dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
     dummy_data = dummy_data.astype(np.single)
+    # dummy_data = (dummy_data * 127 + 127).astype(np.uint8)
 
     start = time.time()
     for i in range(200):
@@ -66,4 +71,6 @@ if __name__ == "__main__":
     end = time.time()
     per_frame_ish = (end-start)/200*1000
     print(output)
+    output, = output
+    print(output.shape)
     print(per_frame_ish)
