@@ -29,11 +29,10 @@ if __name__ == "__main__":
     os.makedirs(artifacts_dir, exist_ok=False)
 
     so = rt.SessionOptions()
-    
     print("Available execution providers : ", rt.get_available_providers())
 
-    num_calibration_frames = 10
-    num_calibration_iterations = 20
+    num_calibration_frames = 1
+    num_calibration_iterations = 1
     compilation_options = {
         "platform": "J7",
         "version": "8.2",
@@ -43,6 +42,11 @@ if __name__ == "__main__":
 
         "tensor_bits": 8,
         # "import": "no",
+        
+        "model_type": "OD",
+        'object_detection:meta_arch_type': 6,
+        'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt", # Note: if this file is omitted, TIDL framework crashes due to buffer overflow
+        'advanced_options:output_feature_16bit_names_list': '168, 370, 432, 494, 556', # TODO: copied from official samples
 
         "debug_level": 300,
 
@@ -72,16 +76,11 @@ if __name__ == "__main__":
 
     assert input_type == 'tensor(float)'
 
-    
     for i in range(num_calibration_frames):
-        dummy_data = np.random.standard_normal(size = (1, channel, height, width))
-        # Standard torchvision normalization parameters used by the pretrained model
-        dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
-        # dummy_data = np.ones((1, channel, height, width))
+        # YOLOv5 normalizes RGB 8-bit-depth [0, 255] into [0, 1]
+        # TODO: use proper image data
+        dummy_data = np.random.random_sample((1, channel, height, width)).astype(np.single)
 
-        dummy_data = dummy_data.astype(np.single)
-
-        # TODO: de-mean and normalize a proper image
         input_data = dummy_data
         sess.run(None, {input_name: input_data})
     
