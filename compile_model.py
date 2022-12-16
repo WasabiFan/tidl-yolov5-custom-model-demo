@@ -6,11 +6,12 @@ import onnxruntime as rt
 import onnx
 import onnx.shape_inference
 import numpy as np
+from PIL import Image
 
 os.environ["TIDL_RT_PERFSTATS"] = "1"
 
 if __name__ == "__main__":
-    _, model_path, out_dir_path = sys.argv
+    _, model_path, calibration_images_path, out_dir_path = sys.argv
 
     tidl_tools_path = os.environ["TIDL_TOOLS_PATH"]
 
@@ -31,8 +32,10 @@ if __name__ == "__main__":
     so = rt.SessionOptions()
     print("Available execution providers : ", rt.get_available_providers())
 
-    num_calibration_frames = 1
-    num_calibration_iterations = 1
+    calibration_images = [ os.path.join(calibration_images_path, name) for name in os.listdir(calibration_images_path) ]
+
+    num_calibration_frames = len(calibration_images)
+    num_calibration_iterations = 5 # TODO: configurable parameter
     compilation_options = {
         "platform": "J7",
         "version": "8.2",
@@ -76,12 +79,12 @@ if __name__ == "__main__":
 
     assert input_type == 'tensor(float)'
 
-    for i in range(num_calibration_frames):
+    for image_path in calibration_images:
         # YOLOv5 normalizes RGB 8-bit-depth [0, 255] into [0, 1]
-        # TODO: use proper image data
-        dummy_data = np.random.random_sample((1, channel, height, width)).astype(np.single)
+        input_data = np.asarray(Image.open(image_path).resize((width, height))).transpose((2, 0, 1)) / 255
+        input_data = input_data.astype(np.float32)
+        input_data = np.expand_dims(input_data, 0)
 
-        input_data = dummy_data
         sess.run(None, {input_name: input_data})
     
     print("Compilation complete")
