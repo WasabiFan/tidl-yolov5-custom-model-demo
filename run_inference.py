@@ -5,11 +5,43 @@ import shutil
 
 import onnxruntime as rt
 import numpy as np
+from PIL import Image, ImageDraw
 
 # os.environ["TIDL_RT_PERFSTATS"] = "1"
 
+CONFIDENCE_THRESHOLD = 0.5
+
+def render_boxes(image_path, inference_width, inference_height, output):
+    # TODO: figure out why there are 600 outputs
+    assert len(output.shape) == 3
+    output_count = output.shape[1]
+    
+    image = Image.open(image_path)
+    draw = ImageDraw.Draw(image)
+
+    for i in range(output_count):
+        x1, y1, x2, y2, confidence, class_idx_float = output[0, i, :]
+        if confidence <= CONFIDENCE_THRESHOLD:
+            continue
+
+        x1 = x1 / inference_width * image.width
+        y1 = y1 / inference_height * image.height
+        x2 = x2 / inference_width * image.width
+        y2 = y2 / inference_height * image.height
+
+        # Yes, TI outputs the class index as a float...
+        class_draw_color = {
+            0.: (255, 50, 50),
+            1.: (50, 50, 255),
+        }[class_idx_float]
+
+        draw.rectangle(((x1, y1), (x2, y2)), fill=None, outline=class_draw_color, width=3)
+
+    os.makedirs("sample_detections/", exist_ok=True)
+    image.save(os.path.join("sample_detections", os.path.splitext(os.path.basename(image_path))[0] + ".png"))
+
 if __name__ == "__main__":
-    _, model_path, artifacts_dir = sys.argv
+    _, model_path, artifacts_dir, test_images_dir = sys.argv
 
     so = rt.SessionOptions()
 
@@ -39,38 +71,29 @@ if __name__ == "__main__":
     input_name = input_details.name
     input_type = input_details.type
 
-    # TODO: why does it say float?
     print(f'Input "{input_name}": {input_type}')
 
-    # assert input_type == 'tensor(float)'
+    test_image_paths = [ os.path.join(test_images_dir, name) for name in os.listdir(test_images_dir) ]
+    test_image_data = []
+    for image_path in test_image_paths:
+        # YOLOv5 normalizes RGB 8-bit-depth [0, 255] into [0, 1]
+        input_data = np.asarray(Image.open(image_path).resize((width, height))).transpose((2, 0, 1)) / 255
 
-    for i in range(20):
-        dummy_data = np.random.standard_normal(size = (1, channel, height, width))
-        # Standard torchvision normalization parameters used by the pretrained model
-        dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
+        input_data = input_data.astype(np.float32)
+        input_data = np.expand_dims(input_data, 0)
 
-        dummy_data = dummy_data.astype(np.single)
-        # dummy_data = dummy_data.astype(np.uint8)
+        test_image_data.append(input_data)
 
-        # TODO: de-mean and normalize a proper image
-        input_data = dummy_data
-        output = sess.run(None, {input_name: input_data})
-    
-    dummy_data = np.random.random_sample(size = (1, channel, height, width))
-    # dummy_data = np.random.standard_normal(size = (1, channel, height, width))
-    # dummy_data = np.random.randint(256, size = (1, channel, height, width), dtype=np.uint8)
-    # Standard torchvision normalization parameters used by the pretrained model
-    # dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
-    dummy_data = dummy_data.astype(np.single)
-    # dummy_data = (dummy_data * 127 + 127).astype(np.uint8)
-
+    NUM_TIMING_REPS = 200
     start = time.time()
-    for i in range(200):
-        input_data = dummy_data
-        output = sess.run(None, {input_name: input_data})
+    for it in range(NUM_TIMING_REPS):
+        for i, input_data in enumerate(test_image_data):
+            output = sess.run(None, {input_name: input_data})
     end = time.time()
-    per_frame_ish = (end-start)/200*1000
-    print(output)
-    output, = output
-    print(output.shape)
-    print(per_frame_ish)
+    TOTAL_EXECUTIONS = NUM_TIMING_REPS * len(test_image_data)
+    per_frame_ish = (end-start)/TOTAL_EXECUTIONS*1000
+    print(f"Time per inference (ms): {per_frame_ish}")
+
+    for image_path, input_data in zip(test_image_paths, test_image_data):
+        detections, = sess.run(None, {input_name: input_data})
+        render_boxes(image_path, width, height, detections[0, :, :, :])
