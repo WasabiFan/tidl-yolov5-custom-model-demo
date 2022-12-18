@@ -6,11 +6,12 @@ import onnxruntime as rt
 import onnx
 import onnx.shape_inference
 import numpy as np
+from PIL import Image
 
 os.environ["TIDL_RT_PERFSTATS"] = "1"
 
 if __name__ == "__main__":
-    _, model_path, out_dir_path = sys.argv
+    _, model_path, calibration_images_path, out_dir_path = sys.argv
 
     tidl_tools_path = os.environ["TIDL_TOOLS_PATH"]
 
@@ -29,11 +30,12 @@ if __name__ == "__main__":
     os.makedirs(artifacts_dir, exist_ok=False)
 
     so = rt.SessionOptions()
-    
     print("Available execution providers : ", rt.get_available_providers())
 
-    num_calibration_frames = 10
-    num_calibration_iterations = 20
+    calibration_images = [ os.path.join(calibration_images_path, name) for name in os.listdir(calibration_images_path) ]
+
+    num_calibration_frames = len(calibration_images)
+    num_calibration_iterations = 5 # TODO: configurable parameter
     compilation_options = {
         "platform": "J7",
         "version": "8.2",
@@ -43,6 +45,11 @@ if __name__ == "__main__":
 
         "tensor_bits": 8,
         # "import": "no",
+        
+        "model_type": "OD",
+        'object_detection:meta_arch_type': 6,
+        'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt", # Note: if this file is omitted, TIDL framework crashes due to buffer overflow
+        'advanced_options:output_feature_16bit_names_list': '168, 370, 432, 494, 556', # TODO: copied from official samples
 
         "debug_level": 300,
 
@@ -72,17 +79,12 @@ if __name__ == "__main__":
 
     assert input_type == 'tensor(float)'
 
-    
-    for i in range(num_calibration_frames):
-        dummy_data = np.random.standard_normal(size = (1, channel, height, width))
-        # Standard torchvision normalization parameters used by the pretrained model
-        dummy_data = (dummy_data - np.array((0.485, 0.456, 0.406), dtype=np.single)[:, None, None]) / np.array((0.229, 0.224, 0.225), dtype=np.single)[:, None, None]
-        # dummy_data = np.ones((1, channel, height, width))
+    for image_path in calibration_images:
+        # YOLOv5 normalizes RGB 8-bit-depth [0, 255] into [0, 1]
+        input_data = np.asarray(Image.open(image_path).resize((width, height))).transpose((2, 0, 1)) / 255
+        input_data = input_data.astype(np.float32)
+        input_data = np.expand_dims(input_data, 0)
 
-        dummy_data = dummy_data.astype(np.single)
-
-        # TODO: de-mean and normalize a proper image
-        input_data = dummy_data
         sess.run(None, {input_name: input_data})
     
     print("Compilation complete")
