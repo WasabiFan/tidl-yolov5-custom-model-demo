@@ -1,6 +1,8 @@
 """
 Compiles an ONNX model into TI's proprietary format, quantizing to 8-bit precision in the process.
 
+Must be run on an x86 host.
+
 Args:
   - Model path. Path to the trained model in ONNX format. There must be a ".prototxt" file of the same name alongside it.
   - Calibration images directory. Path to a folder containing sample images to use when calibrating the model.
@@ -80,8 +82,10 @@ if __name__ == "__main__":
     input_details, = sess.get_inputs()
     batch_size, channel, height, width = input_details.shape
     print(f"Input shape: {input_details.shape}")
+
     assert isinstance(batch_size, str) or batch_size == 1
     assert channel == 3
+
     input_name = input_details.name
     input_type = input_details.type
 

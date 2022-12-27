@@ -1,3 +1,14 @@
+"""
+Runs a pre-compiled model via TIDL. Computes an emperical average time per inference pass and saves the sample detections.
+
+Args:
+  - Model path. Path to the ONNX model file. Ideally, use the "_with_shapes.onnx" output during compilation.
+  - TIDL artifacts directory. The TIDL metadata directory generated during compilation. compile_model.py in this repo calls it "tidl_output".
+  - Sample data path. Path to a directory containing sample images to run through the model.
+
+Will print the average time taken to run inference, and save the detections in a directory called "sample_detections".
+"""
+
 import os
 import sys
 import time
@@ -12,7 +23,6 @@ from PIL import Image, ImageDraw
 CONFIDENCE_THRESHOLD = 0.5
 
 def render_boxes(image_path, inference_width, inference_height, output):
-    # TODO: figure out why there are 600 outputs
     assert len(output.shape) == 3
     output_count = output.shape[1]
     
@@ -33,6 +43,7 @@ def render_boxes(image_path, inference_width, inference_height, output):
         class_draw_color = {
             0.: (255, 50, 50),
             1.: (50, 50, 255),
+            # TODO: if using more than two classes, pick some more colors...
         }[class_idx_float]
 
         draw.rectangle(((x1, y1), (x2, y2)), fill=None, outline=class_draw_color, width=3)
@@ -65,9 +76,11 @@ if __name__ == "__main__":
 
     input_details, = sess.get_inputs()
     batch_size, channel, height, width = input_details.shape
-    print(input_details.shape)
+    print(f"Input shape: {input_details.shape}")
+
     assert isinstance(batch_size, str) or batch_size == 1
     assert channel == 3
+
     input_name = input_details.name
     input_type = input_details.type
 
@@ -84,6 +97,9 @@ if __name__ == "__main__":
 
         test_image_data.append(input_data)
 
+    # Effective inference latency computation: the amount of time it takes, as observed from user code.
+    # Note that the configuration I've tested offloads the non-maximum suppression (NMS) and YOLO output extraction to the TIDL runtime.
+    # This means that execution will take longer when more objects are in view. Use representative images for timing purposes.
     NUM_TIMING_REPS = 200
     start = time.time()
     for it in range(NUM_TIMING_REPS):
@@ -95,5 +111,6 @@ if __name__ == "__main__":
     print(f"Time per inference (ms): {per_frame_ish}")
 
     for image_path, input_data in zip(test_image_paths, test_image_data):
+        # Assumes one output head (postprocessed+YOLO extraction complete) and one image per batch.
         detections, = sess.run(None, {input_name: input_data})
         render_boxes(image_path, width, height, detections[0, :, :, :])
