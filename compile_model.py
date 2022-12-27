@@ -1,3 +1,12 @@
+"""
+Compiles an ONNX model into TI's proprietary format, quantizing to 8-bit precision in the process.
+
+Args:
+  - Model path. Path to the trained model in ONNX format. There must be a ".prototxt" file of the same name alongside it.
+  - Calibration images directory. Path to a folder containing sample images to use when calibrating the model.
+  - Output directory. tTarget for the compiled output and intermediate files.
+"""
+
 import os
 import sys
 import shutil
@@ -35,7 +44,7 @@ if __name__ == "__main__":
     calibration_images = [ os.path.join(calibration_images_path, name) for name in os.listdir(calibration_images_path) ]
 
     num_calibration_frames = len(calibration_images)
-    num_calibration_iterations = 5 # TODO: configurable parameter
+    num_calibration_iterations = 50 # TODO: Probably more than necessary, but 50 is the default.
     compilation_options = {
         "platform": "J7",
         "version": "8.2",
@@ -46,10 +55,11 @@ if __name__ == "__main__":
         "tensor_bits": 8,
         # "import": "no",
         
+        # YOLO-specific configuration. 
         "model_type": "OD",
         'object_detection:meta_arch_type': 6,
-        'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt", # Note: if this file is omitted, TIDL framework crashes due to buffer overflow
-        'advanced_options:output_feature_16bit_names_list': '168, 370, 432, 494, 556', # TODO: copied from official samples
+        'advanced_options:output_feature_16bit_names_list': '168, 370, 432, 494, 556',
+        'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt", # Note: if this file is omitted, TIDL framework crashes due to buffer overflow rather than giving an error
 
         "debug_level": 300,
 
@@ -69,7 +79,7 @@ if __name__ == "__main__":
 
     input_details, = sess.get_inputs()
     batch_size, channel, height, width = input_details.shape
-    print(input_details.shape)
+    print(f"Input shape: {input_details.shape}")
     assert isinstance(batch_size, str) or batch_size == 1
     assert channel == 3
     input_name = input_details.name
@@ -86,5 +96,3 @@ if __name__ == "__main__":
         input_data = np.expand_dims(input_data, 0)
 
         sess.run(None, {input_name: input_data})
-    
-    print("Compilation complete")
