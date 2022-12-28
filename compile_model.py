@@ -60,7 +60,10 @@ if __name__ == "__main__":
         # YOLO-specific configuration. 
         "model_type": "OD",
         'object_detection:meta_arch_type': 6,
-        'advanced_options:output_feature_16bit_names_list': '168, 370, 432, 494, 556',
+        # The below are copied from the following sample code and are specific to the "small" model variant and 384px input dimension.
+        # If using a different model, swap out the list and/or remove the option entirely.
+        # https://github.com/TexasInstruments/edgeai-benchmark/blob/16e57a65e7aa2802a6ac286be297ecc5cad93344/configs/detection.py#L184
+        'advanced_options:output_feature_16bit_names_list': '168, 370, 680, 990, 1300',
         'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt", # Note: if this file is omitted, TIDL framework crashes due to buffer overflow rather than giving an error
 
         "debug_level": 300,
