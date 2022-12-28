@@ -47,6 +47,7 @@ if __name__ == "__main__":
 
     num_calibration_frames = len(calibration_images)
     num_calibration_iterations = 50 # TODO: Probably more than necessary, but 50 is the default.
+    # Documentation on available options: https://github.com/TexasInstruments/edgeai-tidl-tools/blob/master/examples/osrt_python/README.md
     compilation_options = {
         "platform": "J7",
         "version": "8.2",
@@ -55,16 +56,17 @@ if __name__ == "__main__":
         "artifacts_folder": artifacts_dir,
 
         "tensor_bits": 8,
-        # "import": "no",
         
         # YOLO-specific configuration. 
         "model_type": "OD",
         'object_detection:meta_arch_type': 6,
-        # The below are copied from the following sample code and are specific to the "small" model variant and 384px input dimension.
-        # If using a different model, swap out the list and/or remove the option entirely.
+        # The below are copied from the linked sample code and are specific to TI's trained "small" model variant and 384px input dimension.
+        # See the note in the README for my thoughts on this parameter. You should _probably_ look in your .prototxt and replicate those numbers here.
         # https://github.com/TexasInstruments/edgeai-benchmark/blob/16e57a65e7aa2802a6ac286be297ecc5cad93344/configs/detection.py#L184
-        'advanced_options:output_feature_16bit_names_list': '168, 370, 680, 990, 1300',
-        'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt", # Note: if this file is omitted, TIDL framework crashes due to buffer overflow rather than giving an error
+        # 'advanced_options:output_feature_16bit_names_list': '168, 370, 680, 990, 1300',
+
+        # Note: if this parameter is omitted, the TIDL framework crashes due to buffer overflow rather than giving an error
+        'object_detection:meta_layers_names_list': os.path.splitext(model_path)[0] + ".prototxt",
 
         "debug_level": 300,
 
