@@ -89,7 +89,7 @@ judgements.
 
 You will want to prepare a folder of images that includes a representative sample of inputs. It
 should:
-- (TI recommendation) Be around 20 pictures. More is probably better, but also takes longer to run he compilation. I've
+- (TI recommendation) Be around 20 pictures. More is probably better, but also takes longer to run the compilation. I've
   used 5-15 and had good results.
 - (My recommendation) Include a variety of backgrounds, styles, lighting, etc. -- whatever variation your problem space
   involves.
@@ -100,12 +100,37 @@ It's fine to use data from the training set. I just cherry-picked some images fr
 that I felt were reasonable.
 
 You will need:
-- An x86 Linux PC with Python 3.6. Ideally Ubuntu. I recommend a virtual machine.
+- An x86 Linux PC with Python 3.6. Ideally Ubuntu 18.04. I recommend a virtual machine.
 - Python prerequisites and other packages installed.
 
-  Unfortunately, I haven't prepared a complete guide. However, the Dockerfile in this repo
-  (`docker/Dockerfile`) has all necessary steps. I recommend you MANUALLY replicate the steps shown
-  on your machine, applying reasonable judgement as needed.
+  The following should be sufficient for Ubuntu 18.04. Please let me know if something is missing.
+
+  ```bash
+  sudo apt update
+  sudo apt install python3-pip python3-setuptools python3-wheel python3.6-dev
+
+  sudo apt install cmake build-essential protobuf-compiler libprotobuf-dev
+
+  wget https://raw.githubusercontent.com/TexasInstruments/edgeai-tidl-tools/3dc359873f0b80c1e1a0b4eec5d1d02e35d4e532/requirements_pc.txt
+  python3.6 -m pip install -r requirements_pc.txt
+
+  # Make sure to choose the version of the tools corresponding to the version of TIDL on your device.
+  wget https://github.com/TexasInstruments/edgeai-tidl-tools/releases/download/08_02_00_01-rc1/tidl_tools.tar.gz
+  # Or, for TIDL 8.4:
+  # wget https://software-dl.ti.com/jacinto7/esd/tidl-tools/08_04_00_00/tidl_tools.tar.gz
+
+  tar -xzf tidl_tools.tar.gz
+  rm tidl_tools.tar.gz
+
+  echo 'export TIDL_TOOLS_PATH="$HOME/tidl_tools/"' >> ~/.bash_aliases
+  echo 'export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$TIDL_TOOLS_PATH:$TIDL_TOOLS_PATH/osrt_deps"' >> ~/.bash_aliases
+  source ~/.bashrc
+  ```
+
+  Alternately, the Dockerfile in this repo (`docker/Dockerfile`) has all necessary steps in
+  self-contained form for both Ubuntu 18.04 and 20.04. It does not currently work (see note above)
+  but may be used as a reference.
+
 - Calibration data.
 
   See above for recommendations. The script expects a single flat directory with image files in it.
