@@ -20,8 +20,8 @@ This repo includes:
   it on Google Colab.
 - `compile_model.py`, a sample utility script which runs TI's compilation and quantization tools on
   a trained model.
-- `run_inference.py`, a sample app to run inference on input images, time execution, and render the
-  results.
+- `run_inference_images.py`, a sample app to run inference on input images, time execution, and
+  render the results.
 
 ## Prerequisites
 
@@ -179,15 +179,15 @@ non-calibration) data to confirm that your model generalizes to other data.
 Transfer the compiled artifacts directory to your device. Then run:
 
 ```bash
-#                             [   ONNX model, modified by compilation    ] [   compiled model subdirectory   ] [   data   ]
-sudo python3 run_inference.py my_model_data_compiled/last_with_shapes.onnx my_model_data_compiled/tidl_output/ test_images/
+#                                    [   ONNX model, modified by compilation    ] [   compiled model subdirectory   ] [   data   ]
+sudo python3 run_inference_images.py my_model_data_compiled/last_with_shapes.onnx my_model_data_compiled/tidl_output/ test_images/
 ```
 
 _Note: `sudo` used because TIDl attempts to map `/dev/mem` which requires elevated privileges._
 
 This script will create a directory called `sample_detections/` with copies of all the input images.
 The model's detections will be drawn on the images. If nothing appears, try decreasing the
-confidence threshold constant in `run_inference.py`.
+confidence threshold constant in `run_inference_images.py`.
 
 The script will also print an approximate inference time, in milliseconds, per frame. This number
 includes the non-maximum suppression and YOLO output extraction, which we've configured to happen

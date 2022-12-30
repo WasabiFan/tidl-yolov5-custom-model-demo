@@ -1,6 +1,8 @@
 """
 Runs a pre-compiled model via TIDL. Computes an emperical average time per inference pass and saves the sample detections.
 
+Takes input as loose image files. To run detection on a whole video, see "run_inference_video.py".
+
 Args:
   - Model path. Path to the ONNX model file. Ideally, use the "_with_shapes.onnx" output during compilation.
   - TIDL artifacts directory. The TIDL metadata directory generated during compilation. compile_model.py in this repo calls it "tidl_output".
@@ -12,44 +14,39 @@ Will print the average time taken to run inference, and save the detections in a
 import os
 import sys
 import time
-import shutil
 
 import onnxruntime as rt
+import cv2
 import numpy as np
-from PIL import Image, ImageDraw
 
 # os.environ["TIDL_RT_PERFSTATS"] = "1"
 
 CONFIDENCE_THRESHOLD = 0.5
 
-def render_boxes(image_path, inference_width, inference_height, output):
+def render_boxes(image, inference_width, inference_height, output):
     assert len(output.shape) == 3
     output_count = output.shape[1]
-    
-    image = Image.open(image_path)
-    draw = ImageDraw.Draw(image)
 
     for i in range(output_count):
         x1, y1, x2, y2, confidence, class_idx_float = output[0, i, :]
         if confidence <= CONFIDENCE_THRESHOLD:
             continue
 
-        x1 = x1 / inference_width * image.width
-        y1 = y1 / inference_height * image.height
-        x2 = x2 / inference_width * image.width
-        y2 = y2 / inference_height * image.height
+        x1 = int(round(x1 / inference_width * image.shape[1]))
+        y1 = int(round(y1 / inference_height * image.shape[0]))
+        x2 = int(round(x2 / inference_width * image.shape[1]))
+        y2 = int(round(y2 / inference_height * image.shape[0]))
 
         # Yes, TI outputs the class index as a float...
         class_draw_color = {
+            # Colors for boxes of each class, in (R, G, B) order.
             0.: (255, 50, 50),
             1.: (50, 50, 255),
             # TODO: if using more than two classes, pick some more colors...
         }[class_idx_float]
 
-        draw.rectangle(((x1, y1), (x2, y2)), fill=None, outline=class_draw_color, width=3)
-
-    os.makedirs("sample_detections/", exist_ok=True)
-    image.save(os.path.join("sample_detections", os.path.splitext(os.path.basename(image_path))[0] + ".png"))
+        # Reverse RGB tuples since OpenCV images default to BGR
+        cv2.rectangle(image, (x1, y1), (x2, y2), class_draw_color[::-1], 3)
 
 if __name__ == "__main__":
     _, model_path, artifacts_dir, test_images_dir = sys.argv
@@ -90,7 +87,9 @@ if __name__ == "__main__":
     test_image_data = []
     for image_path in test_image_paths:
         # YOLOv5 normalizes RGB 8-bit-depth [0, 255] into [0, 1]
-        input_data = np.asarray(Image.open(image_path).resize((width, height))).transpose((2, 0, 1)) / 255
+        # Model trained with RGB channel order but OpenCV loads in BGR order, so reverse channels.
+        frame = cv2.imread(image_path)
+        input_data = cv2.resize(frame, (width, height)).transpose((2, 0, 1))[::-1, :, :] / 255
 
         input_data = input_data.astype(np.float32)
         input_data = np.expand_dims(input_data, 0)
@@ -106,11 +105,16 @@ if __name__ == "__main__":
         for i, input_data in enumerate(test_image_data):
             output = sess.run(None, {input_name: input_data})
     end = time.time()
+
     TOTAL_EXECUTIONS = NUM_TIMING_REPS * len(test_image_data)
     per_frame_ish = (end-start)/TOTAL_EXECUTIONS*1000
     print(f"Time per inference (ms): {per_frame_ish}")
 
+    os.makedirs("sample_detections/", exist_ok=True)
     for image_path, input_data in zip(test_image_paths, test_image_data):
         # Assumes one output head (postprocessed+YOLO extraction complete) and one image per batch.
         detections, = sess.run(None, {input_name: input_data})
-        render_boxes(image_path, width, height, detections[0, :, :, :])
+
+        image = cv2.imread(image_path)
+        render_boxes(image, width, height, detections[0, :, :, :])
+        cv2.imwrite(os.path.join("sample_detections", os.path.splitext(os.path.basename(image_path))[0] + ".png"), image)
