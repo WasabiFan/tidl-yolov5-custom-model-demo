@@ -22,6 +22,7 @@ This repo includes:
   a trained model.
 - `run_inference_images.py`, a sample app to run inference on input images, time execution, and
   render the results.
+- `run_inference_video.py`, same as above but on whole video files.
 
 ## Prerequisites
 
@@ -172,28 +173,43 @@ python3.6 compile_model.py my_model_data/last.onnx calibration_images/ my_model_
 Note: this would probably work on a variety of devices with TI chips, but I have only tested a
 TDA4VM on the BeagleBone AI-64.
 
-The inference script runs the model on a folder of images. Feel free to use the same folder as was
-used for calibration in the previous step. It is good to also test it on unseen (non-training,
+I have provided two inference scripts: one for loose image files, and one for videos.
+
+The image inference script runs the model on a folder of images. Feel free to use the same folder as
+was used for calibration in the previous step.
+
+Whether running on images or videos, is good to also test it on unseen (non-training,
 non-calibration) data to confirm that your model generalizes to other data.
 
 Transfer the compiled artifacts directory to your device. Then run:
 
 ```bash
+# For images:
 #                                    [   ONNX model, modified by compilation    ] [   compiled model subdirectory   ] [   data   ]
 sudo python3 run_inference_images.py my_model_data_compiled/last_with_shapes.onnx my_model_data_compiled/tidl_output/ test_images/
+
+# For video:
+sudo python3 -m pip3 install tqdm
+
+#                                    [   ONNX model, modified by compilation    ] [   compiled model subdirectory   ] [   data    ]
+sudo python3 run_inference_video.py my_model_data_compiled/last_with_shapes.onnx my_model_data_compiled/tidl_output/ test_video.mp4
 ```
 
 _Note: `sudo` used because TIDl attempts to map `/dev/mem` which requires elevated privileges._
 
-This script will create a directory called `sample_detections/` with copies of all the input images.
-The model's detections will be drawn on the images. If nothing appears, try decreasing the
-confidence threshold constant in `run_inference_images.py`.
+The image script will create a directory called `sample_detections/` with copies of all the input
+images. The video script will do the same but with a `sample_detections.avi` file. The model's
+detections will be drawn on the images. If nothing appears, try decreasing the confidence threshold
+constant at the top of `run_inference_*.py`.
 
-The script will also print an approximate inference time, in milliseconds, per frame. This number
-includes the non-maximum suppression and YOLO output extraction, which we've configured to happen
-within the TIDL runtime. This means that the time taken will vary based on how many detections the
-model outputs. It may be possible to configure a confidence threshold internally via the `.prototxt`
-to further limit the variability of this process. I have not explored this.
+The image script will also print an approximate inference time, in milliseconds, per frame. This
+number includes the non-maximum suppression and YOLO output extraction, which we've configured to
+happen within the TIDL runtime. This means that the time taken will vary based on how many
+detections the model outputs. It may be possible to configure a confidence threshold internally via
+the `.prototxt` to further limit the variability of this process. I have not explored this.
+
+The video script will print an average loop time, but note that this includes the video loading,
+saving, conversions, drawing, etc., which is the bulk of the time for each loop.
 
 ## Tips
 
