@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.0.2)
+
+set(PROJ_NAME run_inference_video)
+project(${PROJ_NAME})
+
+set(CMAKE_C_COMPILER gcc)
+set(CMAKE_CXX_COMPILER g++)
+
+find_package( OpenCV REQUIRED )
+include_directories( ${OpenCV_INCLUDE_DIRS} )
+
+set(SRCS
+    run_inference_video.cpp)
+
+add_executable(${PROJ_NAME} ${SRCS})
+target_link_libraries( ${PROJ_NAME}
+    ${OpenCV_LIBS}
+    onnxruntime
+)
+
+include_directories(
+    /usr/include/onnxruntime/include
+    # "core/session" dir is for "onnxruntime_c_api.h" and co., which other onnxruntime headers implicitly include
+    /usr/include/onnxruntime/core/session
+)

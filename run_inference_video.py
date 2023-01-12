@@ -50,7 +50,7 @@ def render_boxes(image, inference_width, inference_height, output):
         cv2.rectangle(image, (x1, y1), (x2, y2), class_draw_color[::-1], 3)
 
 if __name__ == "__main__":
-    _, model_path, artifacts_dir, test_images_dir = sys.argv
+    _, model_path, artifacts_dir, test_video = sys.argv
 
     so = rt.SessionOptions()
 
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     input_type = input_details.type
 
     print(f'Input "{input_name}": {input_type}')
-    reader = cv2.VideoCapture(test_images_dir)
+    reader = cv2.VideoCapture(test_video)
     writer = cv2.VideoWriter(
         "sample_detections.avi",
         cv2.VideoWriter_fourcc(*'XVID'),
