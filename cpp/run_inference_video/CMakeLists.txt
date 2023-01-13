@@ -16,10 +16,14 @@ add_executable(${PROJ_NAME} ${SRCS})
 target_link_libraries( ${PROJ_NAME}
     ${OpenCV_LIBS}
     onnxruntime
+    # Unclear why, but tivision_apps provides tivxMemAlloc
+    tivision_apps
 )
 
 include_directories(
     /usr/include/onnxruntime/include
     # "core/session" dir is for "onnxruntime_c_api.h" and co., which other onnxruntime headers implicitly include
     /usr/include/onnxruntime/core/session
+
+    /usr/include/processor_sdk/tiovx/include
 )
