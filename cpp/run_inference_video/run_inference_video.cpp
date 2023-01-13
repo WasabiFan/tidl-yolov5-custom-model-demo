@@ -1,5 +1,7 @@
 #include <iterator>
 #include <experimental/iterator>
+#include <filesystem>
+#include <chrono>
 
 #include <opencv2/opencv.hpp>
 
@@ -11,22 +13,23 @@
 
 #include <TI/tivx_mem.h>
 
-void run_inference(std::string model_path, std::string artifacts_path);
+void run_inference(std::string model_path, std::string artifacts_path, std::string test_images_dir);
 void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, std::string tidl_artifacts_dir_path);
+void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::vector<std::pair<cv::Mat, cv::Mat>>& out_data);
 
 
 // onnxruntime has C and C++ API flavors; the C API returns status objects which must be checked and freed.
 // Ideally, use the C++ flavor. But some of TI's additions require the C flavor.
-#define ORT_ASSERT_SUCCESS(expr)                             \
-  do {                                                       \
-    OrtStatus *onnx_status = (expr);                         \
-    if (onnx_status != NULL) {                               \
-      const char* msg = Ort::GetApi().GetErrorMessage(onnx_status); \
-      std::cout << "onnxruntime operation \"" << #expr << "\" failed: " << msg << std::endl; \
-      Ort::GetApi().ReleaseStatus(onnx_status);                     \
-      abort();                                               \
-    }                                                        \
-  } while (0);
+#define ORT_ASSERT_SUCCESS(expr)                                                                   \
+    do {                                                                                           \
+        OrtStatus *onnx_status = (expr);                                                           \
+        if (onnx_status != NULL) {                                                                 \
+            const char* msg = Ort::GetApi().GetErrorMessage(onnx_status);                          \
+            std::cout << "onnxruntime operation \"" << #expr << "\" failed: " << msg << std::endl; \
+            Ort::GetApi().ReleaseStatus(onnx_status);                                              \
+            abort();                                                                               \
+        }                                                                                          \
+    } while (0);
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -36,12 +39,12 @@ int main(int argc, char *argv[]) {
 
     std::string model_path = argv[1];
     std::string artifacts_dir = argv[2];
-    std::string test_video_path = argv[3];
+    std::string test_images_dir = argv[3];
 
-    run_inference(model_path, artifacts_dir);
+    run_inference(model_path, artifacts_dir, test_images_dir);
 }
 
-void run_inference(std::string model_path, std::string artifacts_path) {
+void run_inference(std::string model_path, std::string artifacts_path, std::string test_images_dir) {
 
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "inference_sample");
 
@@ -120,6 +123,7 @@ void run_inference(std::string model_path, std::string artifacts_path) {
     auto run_options = Ort::RunOptions();
     run_options.SetRunLogVerbosityLevel(2);
 
+    // Run a sample forward pass
     session.Run(run_options, binding);
 
     auto output = binding.GetOutputValues();
@@ -129,10 +133,37 @@ void run_inference(std::string model_path, std::string artifacts_path) {
     std::vector<int64_t> actual_output_tensor_dims = actual_output_tensor_info.GetShape();
     ONNXTensorElementDataType actual_output_tensor_type = actual_output_tensor_info.GetElementType();
 
-    std::cout << "Inference completed" << std::endl;
+    std::cout << "Dummy inference completed:" << std::endl;
     std::cout << "\tOutput \"" << output_name << "\" dims, actual: [ ";
     std::copy(actual_output_tensor_dims.begin(), actual_output_tensor_dims.end(), std::experimental::make_ostream_joiner(std::cout, ", "));
     std::cout << " ], type: " << actual_output_tensor_type << std::endl;
+
+    std::vector<std::pair<cv::Mat, cv::Mat>> image_data;
+    load_sample_data(test_images_dir, in_width, in_height, image_data);
+
+    std::cout << "Loaded " << image_data.size() << " images" << std::endl;
+
+    std::cout << "Beginning timing runs..." << std::endl;
+
+    auto start_time = std::chrono::steady_clock::now();
+    for (int i = 0; i < 200; i++) {
+        for (auto const& [ _, input_data] : image_data) {
+            // std::cout << input_data.size() << std::endl;
+            // assert(input_data.size().width == in_width);
+            // assert(input_data.size().height == in_height);
+            // assert(input_data.channels() == in_channels);
+
+            std::copy(input_data.begin<float>(), input_data.end<float>(), (float*)input_tensor_buffer);
+
+            session.Run(run_options, binding);
+        }
+    }
+    auto end_time = std::chrono::steady_clock::now();
+    auto total_execution = end_time - start_time;
+    auto per_frame = total_execution / (200 * image_data.size());
+    std::cout << std::chrono::duration <double, std::milli> (per_frame).count() << " ms" << std::endl;
+
+
     // TODO: free everything
 }
 
@@ -146,9 +177,36 @@ void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, st
     tidl_artifacts_dir_path.copy(tidl_options->artifacts_folder, sizeof(tidl_options->artifacts_folder) - 1);
     tidl_options->artifacts_folder[sizeof(tidl_options->artifacts_folder) - 1] = '\0';
 
-    tidl_options->debug_level = 3;
+    // tidl_options->debug_level = 3;
     // options->max_pre_empt_delay = 6.0;
     // options->priority = 2;
 
     ORT_ASSERT_SUCCESS(OrtSessionOptionsAppendExecutionProvider_Tidl(ort_session_options, tidl_options));
+}
+
+void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::vector<std::pair<cv::Mat, cv::Mat>>& out_data) {
+    for (auto const& dir_entry : std::filesystem::directory_iterator{image_dir_path}) 
+    {
+        auto image = cv::imread(dir_entry.path());
+
+        cv::Mat resized_image;
+        cv::resize(image, resized_image, cv::Size2i(input_width, input_height));
+
+        // cv::cvtColor(input_tensor, input_tensor, cv::ColorConversionCodes::COLOR_BGR2RGB);
+        // input_tensor.convertTo(input_tensor, CV_32FC3, 1/255.0);
+
+        auto input_tensor = cv::dnn::blobFromImage(
+            resized_image,
+            1/255.0, // scalefactor
+            cv::Size2i(input_width, input_height),
+            0, // mean
+            true, // swapRB
+            false, // crop
+            CV_32F
+        );
+
+        // TODO: verify resized to square
+
+        out_data.push_back(std::make_pair(image, input_tensor));
+    }
 }
