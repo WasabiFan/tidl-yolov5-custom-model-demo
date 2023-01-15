@@ -9,8 +9,9 @@ I'm targeting YOLOv5 because it's officially supported by TI. They have a fork o
 with customizations for TIDL. This repo is probably most of the way toward compiling other kinds of
 models, but I haven't tried them. Feel free to open an issue if you have success.
 
-Note that this repo runs inference in Python. C++ or another language that can muster better runtime
-performance might be a wiser choice for the embedded platform. So far I have only tried Python.
+I have provided Python and C++ inference samples. They both use onnxruntime for evaluation. Observed
+inference latency (time taken to run inference) is notably better in C++, but both are reasonably
+fast.
 
 ## Overview
 
@@ -20,9 +21,10 @@ This repo includes:
   it on Google Colab.
 - `compile_model.py`, a sample utility script which runs TI's compilation and quantization tools on
   a trained model.
-- `run_inference_images.py`, a sample app to run inference on input images, time execution, and
-  render the results.
+- `run_inference_images.py`, a Python sample app to run inference on input images, time execution,
+  and render the results.
 - `run_inference_video.py`, same as above but on whole video files.
+- `cpp/run_inference_images/`, a reimplementation of the eponymous Python script, in C++.
 
 ## Prerequisites
 
@@ -173,6 +175,8 @@ python3.6 compile_model.py my_model_data/last.onnx calibration_images/ my_model_
 Note: this would probably work on a variety of devices with TI chips, but I have only tested a
 TDA4VM on the BeagleBone AI-64.
 
+#### Python
+
 I have provided two inference scripts: one for loose image files, and one for videos.
 
 The image inference script runs the model on a folder of images. Feel free to use the same folder as
@@ -210,6 +214,38 @@ the `.prototxt` to further limit the variability of this process. I have not exp
 
 The video script will print an average loop time, but note that this includes the video loading,
 saving, conversions, drawing, etc., which is the bulk of the time for each loop.
+
+#### C++
+
+I have provided a reimplementation of `run_inference_images.py`, in C++. It uses the same
+onnxruntime library as the Python version. See `cpp/run_inference_images/README.md` for build and
+usage instructions. It takes the same parameters and returns the same results as the Python version.
+The printed logs are slightly different, but the behavior is the same.
+
+TI also has C++ samples that do not use onnxruntime. They refer to it as "tidlrt". I have not tested
+this API, but it might provide performance benefits by avoiding the ONNX graph entirely. Their
+sample for this API is [here](https://github.com/TexasInstruments/edgeai-tidl-tools/blob/2f17e96c7b5a7a8d5c7e904ec4ea6365c5c25b4c/examples/tidlrt_cpp/classification.cpp)
+as of writing.
+
+## Performance
+
+I have mainly been working with the "small" model variant, `yolov5s6`, at 320x320 resolution. The
+observed inference times are:
+
+- Python: 7.5ms per frame
+- C++: 6.5ms per frame
+
+I used my own model and a sample dataset with an average of around four objects per frame.
+
+These measured times are overall latency as observed by the caller, not maximum throughput. They run
+with a batch size of 1.
+
+Note that these measurements _do not_ include any of the pre-processing of the input image
+(resizing, re-ordering channels), which would add to these totals. I have not attempted to optimize
+the performance of the pre-processing so I did not include it.
+
+There is around 0.5ms of memcpy overhead in the C++ version that could be avoided with negligible
+effort.
 
 ## Tips
 
