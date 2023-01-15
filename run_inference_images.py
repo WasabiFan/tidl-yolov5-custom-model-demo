@@ -21,7 +21,7 @@ import numpy as np
 
 # os.environ["TIDL_RT_PERFSTATS"] = "1"
 
-CONFIDENCE_THRESHOLD = 0.5
+CONFIDENCE_THRESHOLD = 0.3
 
 def render_boxes(image, inference_width, inference_height, output):
     assert len(output.shape) == 3
