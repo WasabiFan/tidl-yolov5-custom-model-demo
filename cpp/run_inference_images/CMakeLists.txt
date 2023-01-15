@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1.0)
 
-set(PROJ_NAME run_inference_video)
+set(PROJ_NAME run_inference_images)
 project(${PROJ_NAME})
 
 set(CMAKE_C_COMPILER gcc)
@@ -12,7 +12,7 @@ find_package( OpenCV REQUIRED )
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 set(SRCS
-    run_inference_video.cpp)
+    run_inference_images.cpp)
 
 add_executable(${PROJ_NAME} ${SRCS})
 target_link_libraries( ${PROJ_NAME}
