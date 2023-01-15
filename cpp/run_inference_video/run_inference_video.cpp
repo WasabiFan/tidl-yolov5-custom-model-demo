@@ -15,8 +15,7 @@
 
 void run_inference(std::string model_path, std::string artifacts_path, std::string test_images_dir);
 void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, std::string tidl_artifacts_dir_path);
-void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::vector<std::pair<cv::Mat, cv::Mat>>& out_data);
-
+void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::map<std::string, std::pair<cv::Mat, cv::Mat>>& out_data);
 
 // onnxruntime has C and C++ API flavors; the C API returns status objects which must be checked and freed.
 // Ideally, use the C++ flavor. But some of TI's additions require the C flavor.
@@ -55,9 +54,10 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
 
     enable_tidl_execution_provider(ort_session_options, artifacts_path);
 
-    Ort::AllocatorWithDefaultOptions ort_allocator;
 
     Ort::Session session(env, model_path.c_str(), ort_session_options);
+
+    Ort::AllocatorWithDefaultOptions ort_allocator;
 
     // This sample program assumes one input head and one output head, but the library supports arbitrarily many.
     auto input_name = session.GetInputName(0, &*ort_allocator);
@@ -86,33 +86,24 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
 
     assert(input_tensor_dims.size() == 4);
     assert(output_tensor_dims.size() >= 2);
-    // Last dimension should be the YOLO output vector
-    assert(output_tensor_dims[output_tensor_dims.size() - 1] >= 5);
+    assert(output_tensor_dims[output_tensor_dims.size() - 1] == 6);
 
-    // TODO: verify order of width/height
     int64_t in_batch, in_channels, in_width, in_height;
     std::tie(in_batch, in_channels, in_width, in_height) = std::make_tuple(input_tensor_dims[0], input_tensor_dims[1], input_tensor_dims[2], input_tensor_dims[3]);
-    // int64_t out_batch, out_channels, out_width, out_height;
-    // std::tie(out_batch, out_channels, out_width, out_height) = std::make_tuple(output_tensor_dims[0], output_tensor_dims[1], output_tensor_dims[2], output_tensor_dims[3]);
 
     assert(in_batch == 1);
-    // assert(out_batch == in_batch);
 
     static_assert(sizeof(float) == 4);
 
     vx_uint32 input_tensor_total_bytes = in_channels * in_width * in_height * sizeof(float);
     void *input_tensor_buffer = tivxMemAlloc(input_tensor_total_bytes, tivx_mem_heap_region_e::TIVX_MEM_EXTERNAL);
     assert(input_tensor_buffer != NULL);
-
-    // vx_uint32 output_tensor_total_bytes = out_channels * out_width * out_height * sizeof(float);
-    // void *output_tensor_buffer = tivxMemAlloc(output_tensor_total_bytes, tivx_mem_heap_region_e::TIVX_MEM_EXTERNAL);
-    // assert(output_tensor_buffer != NULL);
+    memset(input_tensor_buffer, 0, input_tensor_total_bytes);
 
     // Warning: some references online indicate that TI's tivxMemFree function frees _all_ allocated memory, not just the pointer passed.
 
     auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     Ort::Value input_tensor = Ort::Value::CreateTensor(memory_info, input_tensor_buffer, input_tensor_total_bytes, input_tensor_dims.data(), input_tensor_dims.size(), input_tensor_type);
-    // Ort::Value output_tensor = Ort::Value::CreateTensor(memory_info, output_tensor_buffer, output_tensor_total_bytes, output_tensor_dims.data(), output_tensor_dims.size(), output_tensor_type);
 
     Ort::IoBinding binding(session);
     binding.BindInput(input_name, input_tensor);
@@ -122,6 +113,7 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
 
     auto run_options = Ort::RunOptions();
     run_options.SetRunLogVerbosityLevel(2);
+
 
     // Run a sample forward pass
     session.Run(run_options, binding);
@@ -138,7 +130,7 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
     std::copy(actual_output_tensor_dims.begin(), actual_output_tensor_dims.end(), std::experimental::make_ostream_joiner(std::cout, ", "));
     std::cout << " ], type: " << actual_output_tensor_type << std::endl;
 
-    std::vector<std::pair<cv::Mat, cv::Mat>> image_data;
+    std::map<std::string, std::pair<cv::Mat, cv::Mat>> image_data;
     load_sample_data(test_images_dir, in_width, in_height, image_data);
 
     std::cout << "Loaded " << image_data.size() << " images" << std::endl;
@@ -146,38 +138,108 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
     std::cout << "Beginning timing runs..." << std::endl;
 
     auto start_time = std::chrono::steady_clock::now();
-    for (int i = 0; i < 200; i++) {
-        for (auto const& [ _, input_data] : image_data) {
-            // std::cout << input_data.size() << std::endl;
-            // assert(input_data.size().width == in_width);
-            // assert(input_data.size().height == in_height);
-            // assert(input_data.channels() == in_channels);
+    const int NUM_TIMING_REPS = 20;
+    for (int i = 0; i < NUM_TIMING_REPS; i++) {
+        for (auto const& [ _, value ] : image_data) {
+            auto const& [ __, input_data] = value;
 
             assert(input_data.total() * sizeof(float) == input_tensor_total_bytes);
-            // auto copy_start_time = std::chrono::steady_clock::now();
-            // TODO: memcpy takes 0.5ms+, could be avoided
+            // TODO: memcpy takes 0.5ms+, could be avoided or optimized
             memcpy(input_tensor_buffer, input_data.data, input_data.total() * sizeof(float));
             // TODO: std::copy took 8ms+, very slow
             // std::copy(input_data.begin<float>(), input_data.end<float>(), (float*)input_tensor_buffer);
-            // auto copy_end_time = std::chrono::steady_clock::now();
-            // auto copy_total_execution = copy_end_time - copy_start_time;
-            // std::cout << std::chrono::duration <double, std::micro> (copy_total_execution).count() << " us" << std::endl;
 
             session.Run(run_options, binding);
+            auto output = binding.GetOutputValues();
+            assert(output.size() == 1);
         }
     }
     auto end_time = std::chrono::steady_clock::now();
     auto total_execution = end_time - start_time;
-    auto per_frame = total_execution / (200 * image_data.size());
-    std::cout << std::chrono::duration <double, std::milli> (per_frame).count() << " ms" << std::endl;
+    auto per_frame = total_execution / (NUM_TIMING_REPS * image_data.size());
+    std::cout << "Inference time per frame: " << std::chrono::duration <double, std::milli> (per_frame).count() << " ms" << std::endl;
 
+    std::filesystem::path out_dir = { "sample_detections" };
+    std::filesystem::create_directory(out_dir);
 
-    // TODO: free everything
+    for (auto const& [ filename, value ] : image_data) {
+        auto const& [ original_image, input_data] = value;
+
+        assert(input_data.total() * sizeof(float) == input_tensor_total_bytes);
+        memcpy(input_tensor_buffer, input_data.data, input_data.total() * sizeof(float));
+
+        session.Run(run_options, binding);
+
+        auto ort_output = binding.GetOutputValues();
+        assert(ort_output.size() == 1);
+        
+        auto& tensor_output = ort_output[0];
+
+        auto tensor_output_info = tensor_output.GetTensorTypeAndShapeInfo();
+        std::vector<int64_t> tensor_output_dims = tensor_output_info.GetShape();
+        ONNXTensorElementDataType tensor_output_type = tensor_output_info.GetElementType();
+
+        assert(tensor_output_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+
+        assert(tensor_output_dims.size() == 4);
+        int64_t out_batch, out_channels, out_num_entries, out_features;
+        std::tie(out_batch, out_channels, out_num_entries, out_features) = std::make_tuple(tensor_output_dims[0], tensor_output_dims[1], tensor_output_dims[2], tensor_output_dims[3]);
+
+        assert(out_batch == 1);
+        assert(out_channels == 1);
+        // x1, y1, x2, y2, objectness, class_idx
+        assert(out_features == 6);
+
+        cv::Mat rendered_detections = original_image.clone();
+
+        auto *output_buf = tensor_output.GetTensorData<float>();
+
+        const float CONFIDENCE_THRESHOLD = 0.3;
+        for (int entry_idx = 0; entry_idx < out_num_entries; entry_idx++) {
+            std::vector<float> features;
+            for (int feature_idx = 0; feature_idx < out_features; feature_idx++) {
+                features.push_back(output_buf[entry_idx * out_features + feature_idx]);
+            }
+
+            if (features[4] < CONFIDENCE_THRESHOLD) {
+                continue;
+            }
+
+            float box_x1 = features[0] / in_width * rendered_detections.size().width;
+            float box_y1 = features[1] / in_height * rendered_detections.size().height;
+            float box_x2 = features[2] / in_width * rendered_detections.size().width;
+            float box_y2 = features[3] / in_height * rendered_detections.size().height;
+
+            int class_idx_int = (int)features[5];
+
+            // TODO: if you have more than two classes, modify the below
+            cv::Scalar color = class_idx_int == 0 ? cv::Scalar{ 50, 50, 255 }
+                             : class_idx_int == 1 ? cv::Scalar{ 255, 50, 50 }
+                             : cv::Scalar{ 255, 255, 255 };
+
+            cv::rectangle(
+                rendered_detections,
+                cv::Point2d(box_x1, box_y1),
+                cv::Point2d(box_x2, box_y2),
+                color,
+                3
+            );
+        }
+
+        cv::imwrite(out_dir / filename, rendered_detections);
+    }
+
+    tivxMemFree(input_tensor_buffer, input_tensor_total_bytes, tivx_mem_heap_region_e::TIVX_MEM_EXTERNAL);
+    ort_allocator.Free(input_name);
+    ort_allocator.Free(output_name);
+
+    // TODO: still some memory leaks from Session reported by Valgrind, unclear how to resolve them.
+    // The below is likely redundant as the Session destructor should implicitly release.
+    session.release();
 }
 
 void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, std::string tidl_artifacts_dir_path) {
     c_api_tidl_options *tidl_options = (c_api_tidl_options *)malloc(sizeof(c_api_tidl_options));
-    // TODO: free
     assert(tidl_options);
 
     ORT_ASSERT_SUCCESS(OrtSessionsOptionsSetDefault_Tidl(tidl_options));
@@ -186,22 +248,20 @@ void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, st
     tidl_options->artifacts_folder[sizeof(tidl_options->artifacts_folder) - 1] = '\0';
 
     // tidl_options->debug_level = 3;
-    // options->max_pre_empt_delay = 6.0;
-    // options->priority = 2;
+    // tidl_options->max_pre_empt_delay = 6.0;
+    // tidl_options->priority = 2;
 
     ORT_ASSERT_SUCCESS(OrtSessionOptionsAppendExecutionProvider_Tidl(ort_session_options, tidl_options));
+    free(tidl_options);
 }
 
-void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::vector<std::pair<cv::Mat, cv::Mat>>& out_data) {
+void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::map<std::string, std::pair<cv::Mat, cv::Mat>>& out_data) {
     for (auto const& dir_entry : std::filesystem::directory_iterator{image_dir_path}) 
     {
         auto image = cv::imread(dir_entry.path());
 
         cv::Mat resized_image;
         cv::resize(image, resized_image, cv::Size2i(input_width, input_height));
-
-        // cv::cvtColor(input_tensor, input_tensor, cv::ColorConversionCodes::COLOR_BGR2RGB);
-        // input_tensor.convertTo(input_tensor, CV_32FC3, 1/255.0);
 
         auto input_tensor = cv::dnn::blobFromImage(
             resized_image,
@@ -213,9 +273,6 @@ void load_sample_data(std::string image_dir_path, int input_width, int input_hei
             CV_32F
         );
 
-        // TODO: verify resized to square
-        // TODO: might be h/w swapped
-
-        out_data.push_back(std::make_pair(image, input_tensor));
+        out_data.insert_or_assign(dir_entry.path().filename().string(), std::make_pair(image, input_tensor));
     }
 }
