@@ -153,7 +153,15 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
             // assert(input_data.size().height == in_height);
             // assert(input_data.channels() == in_channels);
 
-            std::copy(input_data.begin<float>(), input_data.end<float>(), (float*)input_tensor_buffer);
+            assert(input_data.total() * sizeof(float) == input_tensor_total_bytes);
+            // auto copy_start_time = std::chrono::steady_clock::now();
+            // TODO: memcpy takes 0.5ms+, could be avoided
+            memcpy(input_tensor_buffer, input_data.data, input_data.total() * sizeof(float));
+            // TODO: std::copy took 8ms+, very slow
+            // std::copy(input_data.begin<float>(), input_data.end<float>(), (float*)input_tensor_buffer);
+            // auto copy_end_time = std::chrono::steady_clock::now();
+            // auto copy_total_execution = copy_end_time - copy_start_time;
+            // std::cout << std::chrono::duration <double, std::micro> (copy_total_execution).count() << " us" << std::endl;
 
             session.Run(run_options, binding);
         }
@@ -206,6 +214,7 @@ void load_sample_data(std::string image_dir_path, int input_width, int input_hei
         );
 
         // TODO: verify resized to square
+        // TODO: might be h/w swapped
 
         out_data.push_back(std::make_pair(image, input_tensor));
     }
