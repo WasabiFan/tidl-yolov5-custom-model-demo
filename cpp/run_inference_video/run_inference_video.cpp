@@ -15,7 +15,9 @@
 
 void run_inference(std::string model_path, std::string artifacts_path, std::string test_images_dir);
 void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, std::string tidl_artifacts_dir_path);
+void print_sample_output_metadata(const char *output_name, Ort::Value& output);
 void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::map<std::string, std::pair<cv::Mat, cv::Mat>>& out_data);
+void render_detections(uint64_t detection_width, uint64_t detection_height, cv::Mat& out_image, Ort::Value& tensor_output);
 
 // onnxruntime has C and C++ API flavors; the C API returns status objects which must be checked and freed.
 // Ideally, use the C++ flavor. But some of TI's additions require the C flavor.
@@ -50,10 +52,9 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
     Ort::SessionOptions ort_session_options;
     ort_session_options.SetIntraOpNumThreads(4);
     ort_session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-    // TODO: investigate the other options
+    // TODO: session has many options, take a look at what's available
 
     enable_tidl_execution_provider(ort_session_options, artifacts_path);
-
 
     Ort::Session session(env, model_path.c_str(), ort_session_options);
 
@@ -115,28 +116,20 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
     run_options.SetRunLogVerbosityLevel(2);
 
 
-    // Run a sample forward pass
+    // Run a sample forward pass to show the "actual" output dims (for variable-length dims)
     session.Run(run_options, binding);
-
     auto output = binding.GetOutputValues();
     assert(output.size() == 1);
-    
-    auto actual_output_tensor_info = output[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> actual_output_tensor_dims = actual_output_tensor_info.GetShape();
-    ONNXTensorElementDataType actual_output_tensor_type = actual_output_tensor_info.GetElementType();
+    print_sample_output_metadata(output_name, output[0]);
 
-    std::cout << "Dummy inference completed:" << std::endl;
-    std::cout << "\tOutput \"" << output_name << "\" dims, actual: [ ";
-    std::copy(actual_output_tensor_dims.begin(), actual_output_tensor_dims.end(), std::experimental::make_ostream_joiner(std::cout, ", "));
-    std::cout << " ], type: " << actual_output_tensor_type << std::endl;
-
+    // Load data from provided directory
     std::map<std::string, std::pair<cv::Mat, cv::Mat>> image_data;
     load_sample_data(test_images_dir, in_width, in_height, image_data);
-
     std::cout << "Loaded " << image_data.size() << " images" << std::endl;
 
     std::cout << "Beginning timing runs..." << std::endl;
 
+    // Compute emperical average inference latency
     auto start_time = std::chrono::steady_clock::now();
     const int NUM_TIMING_REPS = 20;
     for (int i = 0; i < NUM_TIMING_REPS; i++) {
@@ -159,6 +152,8 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
     auto per_frame = total_execution / (NUM_TIMING_REPS * image_data.size());
     std::cout << "Inference time per frame: " << std::chrono::duration <double, std::milli> (per_frame).count() << " ms" << std::endl;
 
+    std::cout << "Rendering sample detections..." << std::endl;
+
     std::filesystem::path out_dir = { "sample_detections" };
     std::filesystem::create_directory(out_dir);
 
@@ -172,62 +167,14 @@ void run_inference(std::string model_path, std::string artifacts_path, std::stri
 
         auto ort_output = binding.GetOutputValues();
         assert(ort_output.size() == 1);
-        
-        auto& tensor_output = ort_output[0];
-
-        auto tensor_output_info = tensor_output.GetTensorTypeAndShapeInfo();
-        std::vector<int64_t> tensor_output_dims = tensor_output_info.GetShape();
-        ONNXTensorElementDataType tensor_output_type = tensor_output_info.GetElementType();
-
-        assert(tensor_output_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
-
-        assert(tensor_output_dims.size() == 4);
-        int64_t out_batch, out_channels, out_num_entries, out_features;
-        std::tie(out_batch, out_channels, out_num_entries, out_features) = std::make_tuple(tensor_output_dims[0], tensor_output_dims[1], tensor_output_dims[2], tensor_output_dims[3]);
-
-        assert(out_batch == 1);
-        assert(out_channels == 1);
-        // x1, y1, x2, y2, objectness, class_idx
-        assert(out_features == 6);
 
         cv::Mat rendered_detections = original_image.clone();
-
-        auto *output_buf = tensor_output.GetTensorData<float>();
-
-        const float CONFIDENCE_THRESHOLD = 0.3;
-        for (int entry_idx = 0; entry_idx < out_num_entries; entry_idx++) {
-            std::vector<float> features;
-            for (int feature_idx = 0; feature_idx < out_features; feature_idx++) {
-                features.push_back(output_buf[entry_idx * out_features + feature_idx]);
-            }
-
-            if (features[4] < CONFIDENCE_THRESHOLD) {
-                continue;
-            }
-
-            float box_x1 = features[0] / in_width * rendered_detections.size().width;
-            float box_y1 = features[1] / in_height * rendered_detections.size().height;
-            float box_x2 = features[2] / in_width * rendered_detections.size().width;
-            float box_y2 = features[3] / in_height * rendered_detections.size().height;
-
-            int class_idx_int = (int)features[5];
-
-            // TODO: if you have more than two classes, modify the below
-            cv::Scalar color = class_idx_int == 0 ? cv::Scalar{ 50, 50, 255 }
-                             : class_idx_int == 1 ? cv::Scalar{ 255, 50, 50 }
-                             : cv::Scalar{ 255, 255, 255 };
-
-            cv::rectangle(
-                rendered_detections,
-                cv::Point2d(box_x1, box_y1),
-                cv::Point2d(box_x2, box_y2),
-                color,
-                3
-            );
-        }
+        render_detections(in_width, in_height, rendered_detections, ort_output[0]);
 
         cv::imwrite(out_dir / filename, rendered_detections);
     }
+
+    std::cout << "Sample detections saved to: " << out_dir.relative_path() << std::endl;
 
     tivxMemFree(input_tensor_buffer, input_tensor_total_bytes, tivx_mem_heap_region_e::TIVX_MEM_EXTERNAL);
     ort_allocator.Free(input_name);
@@ -255,6 +202,17 @@ void enable_tidl_execution_provider(Ort::SessionOptions& ort_session_options, st
     free(tidl_options);
 }
 
+void print_sample_output_metadata(const char *output_name, Ort::Value& output) {
+    auto actual_output_tensor_info = output.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> actual_output_tensor_dims = actual_output_tensor_info.GetShape();
+    ONNXTensorElementDataType actual_output_tensor_type = actual_output_tensor_info.GetElementType();
+
+    std::cout << "Dummy inference completed:" << std::endl;
+    std::cout << "\tOutput \"" << output_name << "\" dims, actual: [ ";
+    std::copy(actual_output_tensor_dims.begin(), actual_output_tensor_dims.end(), std::experimental::make_ostream_joiner(std::cout, ", "));
+    std::cout << " ], type: " << actual_output_tensor_type << std::endl;
+}
+
 void load_sample_data(std::string image_dir_path, int input_width, int input_height, std::map<std::string, std::pair<cv::Mat, cv::Mat>>& out_data) {
     for (auto const& dir_entry : std::filesystem::directory_iterator{image_dir_path}) 
     {
@@ -274,5 +232,57 @@ void load_sample_data(std::string image_dir_path, int input_width, int input_hei
         );
 
         out_data.insert_or_assign(dir_entry.path().filename().string(), std::make_pair(image, input_tensor));
+    }
+}
+
+void render_detections(uint64_t detection_width, uint64_t detection_height, cv::Mat& out_image, Ort::Value& tensor_output) {
+    auto tensor_output_info = tensor_output.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> tensor_output_dims = tensor_output_info.GetShape();
+    ONNXTensorElementDataType tensor_output_type = tensor_output_info.GetElementType();
+
+    assert(tensor_output_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+
+    assert(tensor_output_dims.size() == 4);
+    int64_t out_batch, out_channels, out_num_entries, out_features;
+    std::tie(out_batch, out_channels, out_num_entries, out_features) = std::make_tuple(tensor_output_dims[0], tensor_output_dims[1], tensor_output_dims[2], tensor_output_dims[3]);
+
+    assert(out_batch == 1);
+    assert(out_channels == 1);
+    // x1, y1, x2, y2, objectness, class_idx
+    assert(out_features == 6);
+
+    auto *output_buf = tensor_output.GetTensorData<float>();
+
+    const float CONFIDENCE_THRESHOLD = 0.3;
+    for (int entry_idx = 0; entry_idx < out_num_entries; entry_idx++) {
+        std::vector<float> features;
+        for (int feature_idx = 0; feature_idx < out_features; feature_idx++) {
+            features.push_back(output_buf[entry_idx * out_features + feature_idx]);
+        }
+
+        if (features[4] < CONFIDENCE_THRESHOLD) {
+            continue;
+        }
+
+        float box_x1 = features[0] / detection_width * out_image.size().width;
+        float box_y1 = features[1] / detection_height * out_image.size().height;
+        float box_x2 = features[2] / detection_width * out_image.size().width;
+        float box_y2 = features[3] / detection_height * out_image.size().height;
+
+        int class_idx_int = (int)features[5];
+
+        // TODO: if you have more than two classes, modify the below
+        // Color channels in BGR order
+        cv::Scalar color = class_idx_int == 0 ? cv::Scalar{ 50, 50, 255 }
+                            : class_idx_int == 1 ? cv::Scalar{ 255, 50, 50 }
+                            : cv::Scalar{ 255, 255, 255 };
+
+        cv::rectangle(
+            out_image,
+            cv::Point2d(box_x1, box_y1),
+            cv::Point2d(box_x2, box_y2),
+            color,
+            3
+        );
     }
 }
