@@ -1,6 +1,8 @@
 """
 Runs a pre-compiled model via TIDL. Computes an emperical average time per inference pass and saves the sample detections.
 
+Intended to be run on the embedded device.
+
 Takes input as loose image files. To run detection on a whole video, see "run_inference_video.py".
 
 Args:

@@ -1,6 +1,8 @@
 """
 Runs a pre-compiled model via TIDL. Saves the sample detections.
 
+Intended to be run on the embedded device.
+
 Takes input as a video file and outputs a video file (.avi). To run detections on loose images, see "run_inference_images.py".
 
 Args:
