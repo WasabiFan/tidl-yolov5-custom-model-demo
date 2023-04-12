@@ -6,7 +6,7 @@ Must be run on an x86 host.
 Args:
   - Model path. Path to the trained model in ONNX format. There must be a ".prototxt" file of the same name alongside it.
   - Calibration images directory. Path to a folder containing sample images to use when calibrating the model.
-  - Output directory. tTarget for the compiled output and intermediate files.
+  - Output directory. Target for the compiled output and intermediate files.
 """
 
 import os

@@ -13,18 +13,30 @@ I have provided Python and C++ inference samples. They both use onnxruntime for 
 inference latency (time taken to run inference) is notably better in C++, but both are reasonably
 fast.
 
+**Tested TIDL version: 08_02_00_01**
+
+**Tested BeagleBone AI-64 image: `bbai64-debian-11.6-xfce-edgeai-arm64-2023-02-05-10gb.img.xz`**
+
+The version of the EdgeAI runtime installed on your device must match the version of the TIDl tools
+used to compile the model on your PC.
+
 ## Overview
 
 This repo includes:
-- A Jupyter Notebook with necessary steps to train a YOLOv5 model (including TI's customizations)
-  and export it in TIDL-compatible format. It can be adapted for any environment but I have tested
-  it on Google Colab.
-- `compile_model.py`, a sample utility script which runs TI's compilation and quantization tools on
-  a trained model.
-- `run_inference_images.py`, a Python sample app to run inference on input images, time execution,
-  and render the results.
-- `run_inference_video.py`, same as above but on whole video files.
-- `cpp/run_inference_images/`, a reimplementation of the eponymous Python script, in C++.
+- Training scripts
+  - A Jupyter Notebook with necessary steps to train a YOLOv5 model (including TI's customizations)
+    and export it in TIDL-compatible format. It can be adapted for any environment but I have tested
+    it on Google Colab.
+- Compilation scripts
+  - `compile_model.py`, a sample utility script which runs TI's compilation and quantization tools on
+    a trained model.
+  - `docker/Dockerfile`, a Docker container image that you can use to run `compile_model.py` with
+    minimal hassle.
+- Inference demos
+  - `run_inference_images.py`, a Python sample app to run inference on input images, time execution,
+    and render the results.
+  - `run_inference_video.py`, same as above but on whole video files.
+  - `cpp/run_inference_images/`, a reimplementation of the eponymous Python script, in C++.
 
 ## Prerequisites
 
@@ -33,19 +45,14 @@ This repo includes:
   I provide a Jupyter Notebook that can be used with Google Colab.
   If you have your own hardware, that may be easier than messing with Colab. Alternately, you can
   skip training your own model and use TI's provided weights as a proof-of-concept.
-- An x86 Linux machine for model compilation.
+- A host machine capable of running x86 Docker images, OR a native x86 Linux machine for model
+  compilation.
 
-  Unfortunately, TI's tools require Python 3.6 and only
-  officially support Ubuntu 18.04. They crash irredeemably when running under Docker. I used a
-  virtual machine.
+  Unfortunately, TI's tools require Python 3.6 and only officially support Ubuntu 18.04. As a result,
+  I recommend using my provided Docker container. This should work on Windows, Linux and macOS x86
+  hosts.
+
 - A TDA4VM or other TIDL-supported chip, to test the results. I developed this on a BeagleBone AI-64.
-
-### Disclaimer: Docker
-
-I included a Docker image that I intended to be used for compilation. This repo also includes a vscode
-configuration for using the Docker image as a dev container. **As of writing, TIDL has extreme
-memory errors which mean it crashes and misbehaves under Docker. See [here](https://e2e.ti.com/support/processors-group/processors/f/processors-forum/1160791/tda4vm-bus-error-when-running-forward-pass-through-model-with-tidl_tools-on-pc/4369467)
-for discussion.** If anyone has success running under Docker, let me know.
 
 ## Usage
 
@@ -103,36 +110,9 @@ It's fine to use data from the training set. I just cherry-picked some images fr
 that I felt were reasonable.
 
 You will need:
-- An x86 Linux PC with Python 3.6. Ideally Ubuntu 18.04. I recommend a virtual machine.
-- Python prerequisites and other packages installed.
-
-  The following should be sufficient for Ubuntu 18.04. Please let me know if something is missing.
-
-  ```bash
-  sudo apt update
-  sudo apt install python3-pip python3-setuptools python3-wheel python3.6-dev
-
-  sudo apt install cmake build-essential protobuf-compiler libprotobuf-dev
-
-  wget https://raw.githubusercontent.com/TexasInstruments/edgeai-tidl-tools/3dc359873f0b80c1e1a0b4eec5d1d02e35d4e532/requirements_pc.txt
-  python3.6 -m pip install -r requirements_pc.txt
-
-  # Make sure to choose the version of the tools corresponding to the version of TIDL on your device.
-  wget https://github.com/TexasInstruments/edgeai-tidl-tools/releases/download/08_02_00_01-rc1/tidl_tools.tar.gz
-  # Or, for TIDL 8.4:
-  # wget https://software-dl.ti.com/jacinto7/esd/tidl-tools/08_04_00_00/tidl_tools.tar.gz
-
-  tar -xzf tidl_tools.tar.gz
-  rm tidl_tools.tar.gz
-
-  echo 'export TIDL_TOOLS_PATH="$HOME/tidl_tools/"' >> ~/.bash_aliases
-  echo 'export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$TIDL_TOOLS_PATH:$TIDL_TOOLS_PATH/osrt_deps"' >> ~/.bash_aliases
-  source ~/.bashrc
-  ```
-
-  Alternately, the Dockerfile in this repo (`docker/Dockerfile`) has all necessary steps in
-  self-contained form for both Ubuntu 18.04 and 20.04. It does not currently work (see note above)
-  but may be used as a reference.
+- An x86 host machine to run model compilation. The steps below will focus on the Docker option, but
+  if you would prefer to do it natively see the expandable "Alternative: model compilation without
+  Docker" section below.
 
 - Calibration data.
 
@@ -142,6 +122,8 @@ You will need:
 Things to consider:
 - The script is currently hard-coded to use 50 calibration iterations. It seemed to work fine with 5.
   50 is the default, so kept it that way, but feel free to change it.
+  
+  More calibration iterations means more waiting. Each one takes 30 seconds to one minute.
 - You may want to enable or change the `output_feature_16bit_names_list` parameter.
 
   This option lists layer names whose outputs will be processed at higher resolution than the
@@ -163,12 +145,81 @@ Make sure to save:
   It is likely that all you need are the `.onnx` and `.bin` files, but I haven't verified this.
   Maybe also one or both of the top-level `.txt` files. Let me know if you find more details.
 
+To perform compilation and calibration, clone this repo. Make sure that Docker is installed and
+running. Then run the following:
+
+```bash
+cd docker/
+
+# One-time Docker container build:
+docker build . -t tidl-model-build-env
+
+# Run compilation:
+docker run --rm --shm-size=2gb \
+  -v /path/to/my_model_data/:/model_in:ro \
+  -v /path/to/calibration_images/:/calibration_images:ro \
+  -v $PWD/../:/scripts:ro \
+  -v $PWD/artifacts:/model_out \
+  tidl-model-build-env \
+  python3.6 /scripts/compile_model.py /model_in/last.onnx /calibration_images /model_out
+```
+
+Substitute the `/path/to/...` paths with ABSOLUTE (i.e., starting with a drive letter like `C:\` on
+Windows or `/` on Linux/macOS) paths to your compiled model and calibration images directory. You
+may also want to change the name of the onnx file in the last line of the command if you called it
+something other than `last.onnx`.
+
+Don't worry too much about the Docker syntax and parameters if you haven't seen them before. It's
+sufficient to change the paths and leave the rest untouched. However, I will note that the `-v`
+flags are specifying mappings from your host file system into the Docker container; only the
+directories specified with `-v` will be accessible to `compile_model.py`. The syntax is
+`-v host_path:container_path:permissions`, so you only want to modify the path up until the colon.
+
+<details>
+<summary>Alternative: model compilation without Docker</summary>
+
+To compile without Docker, you will need an x86 Linux PC with Python 3.6. Ideally Ubuntu 18.04. A
+virtual machine is fine.
+
+Install the following prerequisites. The listed commands should be sufficient for Ubuntu 18.04.
+Please let me know if something is missing.
+
+```bash
+sudo apt update
+sudo apt install python3-pip python3-setuptools python3-wheel python3.6-dev
+
+sudo apt install cmake build-essential protobuf-compiler libprotobuf-dev
+
+wget https://raw.githubusercontent.com/TexasInstruments/edgeai-tidl-tools/3dc359873f0b80c1e1a0b4eec5d1d02e35d4e532/requirements_pc.txt
+python3.6 -m pip install -r requirements_pc.txt
+
+# Make sure to choose the version of the tools corresponding to the version of TIDL on your device.
+wget https://github.com/TexasInstruments/edgeai-tidl-tools/releases/download/08_02_00_01-rc1/tidl_tools.tar.gz
+# Or, for other versions:
+# wget https://software-dl.ti.com/jacinto7/esd/tidl-tools/08_04_00_00/tidl_tools.tar.gz
+# wget https://software-dl.ti.com/jacinto7/esd/tidl-tools/08_06_00_00/TIDL_TOOLS/AM68PA/tidl_tools.tar.gz
+
+tar -xzf tidl_tools.tar.gz
+rm tidl_tools.tar.gz
+
+echo 'export TIDL_TOOLS_PATH="$HOME/tidl_tools/"' >> ~/.bash_aliases
+echo 'export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$TIDL_TOOLS_PATH:$TIDL_TOOLS_PATH/osrt_deps"' >> ~/.bash_aliases
+source ~/.bashrc
+```
+
+It may be helpful to inspect the Dockerfile in this repo (`docker/Dockerfile`). It targets Ubuntu
+20.04 because it requires slightly fewer installs and seems to work fine. You may want to reference
+it instead.
+
 To perform compilation and calibration, clone this repo in your x86 environment and run:
 
 ```bash
 #                          [     ONNX model      ] [calibration data ] [  output directory   ]         
 python3.6 compile_model.py my_model_data/last.onnx calibration_images/ my_model_data_compiled/
 ```
+
+</details>
+
 
 ### Step 3: Try out inference on-device
 
@@ -195,7 +246,7 @@ sudo python3 run_inference_images.py my_model_data_compiled/last_with_shapes.onn
 # For video:
 sudo python3 -m pip3 install tqdm
 
-#                                    [   ONNX model, modified by compilation    ] [   compiled model subdirectory   ] [   data    ]
+#                                   [   ONNX model, modified by compilation    ] [   compiled model subdirectory   ] [   data    ]
 sudo python3 run_inference_video.py my_model_data_compiled/last_with_shapes.onnx my_model_data_compiled/tidl_output/ test_video.mp4
 ```
 
