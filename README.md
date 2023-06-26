@@ -155,13 +155,7 @@ cd docker/
 docker build . -t tidl-model-build-env
 
 # Run compilation:
-docker run --rm --shm-size=2gb \
-  -v /path/to/my_model_data/:/model_in:ro \
-  -v /path/to/calibration_images/:/calibration_images:ro \
-  -v $PWD/../:/scripts:ro \
-  -v $PWD/artifacts:/model_out \
-  tidl-model-build-env \
-  python3.6 /scripts/compile_model.py /model_in/last.onnx /calibration_images /model_out
+docker run --rm --shm-size=2gb -v "$PWD/../:/model_in:ro" -v "$PWD/../calibration/:/calibration_images:ro" -v "$PWD/../:/scripts:ro" -v "$PWD/artifacts:/model_out" tidl-model-build-env python3.6 /scripts/compile_model.py /model_in/best.onnx /calibration_images /model_out
 ```
 
 Substitute the `/path/to/...` paths with ABSOLUTE (i.e., starting with a drive letter like `C:\` on
