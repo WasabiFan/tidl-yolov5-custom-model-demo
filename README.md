@@ -164,6 +164,9 @@ docker run --rm --shm-size=2gb \
   python3.6 /scripts/compile_model.py /model_in/last.onnx /calibration_images /model_out
 ```
 
+**Syntax note: on Windows, you will need to either remove the line breaks and backslashes or replace
+the backslashes with a `` ` `` (backtick/grave). The command is split onto multiple lines for readability.**
+
 Substitute the `/path/to/...` paths with ABSOLUTE (i.e., starting with a drive letter like `C:\` on
 Windows or `/` on Linux/macOS) paths to your compiled model and calibration images directory. You
 may also want to change the name of the onnx file in the last line of the command if you called it
